@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 500" fill="none">
+  <defs>
+    <linearGradient id="wash" x1="120" y1="62" x2="526" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9E8FF"/>
+      <stop offset=".52" stop-color="#F2F1FF"/>
+      <stop offset="1" stop-color="#E6F3FF"/>
+    </linearGradient>
+    <linearGradient id="book" x1="236" y1="255" x2="423" y2="376" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#E8EDFF"/>
+    </linearGradient>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#8C79F2"/>
+      <stop offset="1" stop-color="#5685EF"/>
+    </linearGradient>
+    <filter id="shadow" x="125" y="146" width="424" height="317" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="16"/>
+      <feGaussianBlur stdDeviation="15"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix values="0 0 0 0 0.34 0 0 0 0 0.36 0 0 0 0 0.68 0 0 0 0.13 0"/>
+      <feBlend in2="BackgroundImageFix" result="effect1_dropShadow"/>
+      <feBlend in="SourceGraphic" in2="effect1_dropShadow" result="shape"/>
+    </filter>
+  </defs>
+  <path d="M320 12c130 0 236 100 236 222S450 456 320 456 84 356 84 234 190 12 320 12Z" fill="url(#wash)"/>
+  <path d="M160 114c40-47 96-69 161-67M486 361c-45 53-111 81-184 81" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 8"/>
+  <g opacity=".65">
+    <path d="m177 212 92-58 87 27 89-58" stroke="#A9A1EF" stroke-width="2" stroke-dasharray="5 7"/>
+    <path d="m223 355 78-49 90 44 59-57" stroke="#A9A1EF" stroke-width="2" stroke-dasharray="5 7"/>
+  </g>
+  <g filter="url(#shadow)">
+    <path d="M221 269c34-27 79-31 120-14l26 11 20-9c43-19 91-14 123 15v126c-32-29-80-34-123-15l-20 9-26-11c-41-17-86-13-120 14V269Z" fill="url(#book)" stroke="#D8DDFC" stroke-width="2"/>
+    <path d="M367 266v126" stroke="#CFD5F6" stroke-width="2"/>
+    <path d="M243 291c23-14 51-19 79-14m-79 32c22-11 47-14 71-9m-71 27c22-9 43-10 63-5m82-30c26-10 52-10 76 0m-76 25c25-9 51-8 76 1m-76 25c25-8 51-6 76 3" stroke="#C1C9EC" stroke-width="4" stroke-linecap="round"/>
+    <path d="M315 268c16 4 31 9 46 16v123c-15-7-30-13-46-16V268Z" fill="#F5F5FF"/>
+  </g>
+  <g>
+    <circle cx="160" cy="210" r="31" fill="#fff" stroke="#D9D5FF" stroke-width="2"/>
+    <circle cx="160" cy="210" r="19" fill="#F2F0FF"/>
+    <path d="M152 210h16m-8-8v16" stroke="#7761E8" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="441" cy="122" r="31" fill="#fff" stroke="#D9D5FF" stroke-width="2"/>
+    <circle cx="441" cy="122" r="19" fill="#F2F0FF"/>
+    <path d="M435 122c0-3.3 2.7-6 6-6s6 2.7 6 6-2.7 6-6 6m-2-2 2 2 2-2m-6 8h8" stroke="#7761E8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="479" cy="348" r="28" fill="#fff" stroke="#D9D5FF" stroke-width="2"/>
+    <circle cx="479" cy="348" r="17" fill="#ECF5FF"/>
+    <path d="m479 337 3.2 6.5 7.2 1-5.2 5 1.2 7.1-6.4-3.4-6.4 3.4 1.2-7.1-5.2-5 7.2-1 3.2-6.5Z" fill="#6790EF"/>
+    <circle cx="195" cy="361" r="21" fill="#fff" stroke="#E7DDFC" stroke-width="2"/>
+    <circle cx="195" cy="361" r="12" fill="#F9F4FF"/>
+    <path d="m190 363 3.3-7 3.3 7m-5.3-2h4" stroke="#A474D9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g>
+    <circle cx="321" cy="176" r="39" fill="#fff" stroke="#DCD8FF" stroke-width="2"/>
+    <circle cx="321" cy="176" r="27" fill="url(#node)"/>
+    <path d="M310 176c0-6.1 4.9-11 11-11 6.1 0 11 4.9 11 11s-4.9 11-11 11c-3.2 0-6-1.3-8-3.5m4-8.5h8m-4-4v8" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M321 215v22" stroke="#9D92EB" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 5"/>
+  </g>
+  <g fill="#B2A9F2">
+    <path d="M112 299c2-7 3-8 10-10-7-2-8-3-10-10-2 7-3 8-10 10 7 2 8 3 10 10Z"/>
+    <path d="M504 205c1.6-5.5 2.5-6.4 8-8-5.5-1.6-6.4-2.5-8-8-1.6 5.5-2.5 6.4-8 8 5.5 1.6 6.4 2.5 8 8Z"/>
+    <path d="M371 91c1.2-4.2 1.8-4.8 6-6-4.2-1.2-4.8-1.8-6-6-1.2 4.2-1.8 4.8-6 6 4.2 1.2 4.8 1.8 6 6Z"/>
+  </g>
+  <circle cx="139" cy="145" r="4" fill="#F1A9C0"/>
+  <circle cx="468" cy="274" r="4" fill="#91B9F3"/>
+  <circle cx="278" cy="93" r="3" fill="#BAA9F1"/>
+  <circle cx="371" cy="426" r="3" fill="#F0B6C8"/>
+</svg>
