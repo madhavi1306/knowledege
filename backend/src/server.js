@@ -14,12 +14,15 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 
 try {
   await prisma.$connect()
-  const server = createApp(prisma).listen(port, () => {
+  const app = createApp(prisma)
+  await app.locals.analysisService.start()
+  const server = app.listen(port, () => {
     console.log(`KNOWFLOW API listening on http://localhost:${port}`)
   })
 
   const shutdown = async () => {
     server.close(async () => {
+      await app.locals.analysisService.stop()
       await prisma.$disconnect()
       process.exit(0)
     })
@@ -28,7 +31,7 @@ try {
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 } catch (error) {
-  console.error('Unable to connect to PostgreSQL. Check DATABASE_URL and ensure the database is running.', error)
+  console.error('Unable to start KNOWFLOW API. Check PostgreSQL connectivity and apply pending migrations.', error)
   await prisma.$disconnect()
   process.exitCode = 1
 }

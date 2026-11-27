@@ -7,13 +7,16 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String   @db.VarChar(80)
-  email        String   @unique @db.VarChar(254)
-  passwordHash String   @db.VarChar(255)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  documents    Document[]
+  id                   String                @id @default(cuid())
+  name                 String                @db.VarChar(80)
+  email                String                @unique @db.VarChar(254)
+  passwordHash         String                @db.VarChar(255)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  documents            Document[]
+  analyses             DocumentAnalysis[]
+  concepts             Concept[]
+  conceptRelationships ConceptRelationship[]
 }
 
 enum DocumentUploadStatus {
@@ -21,6 +24,19 @@ enum DocumentUploadStatus {
   PROCESSING
   ANALYSIS_COMPLETED
   FAILED
+}
+
+enum ProcessingStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ConceptRelationshipType {
+  PREREQUISITE
+  RELATED
+  DEPENDS_ON
 }
 
 model Document {
@@ -36,7 +52,144 @@ model Document {
   uploadedAt       DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis         DocumentAnalysis?
+  extractedPages   ExtractedPage[]
+  conceptSources   ConceptSource[]
 
   @@unique([userId, contentHash])
   @@index([userId, uploadedAt])
+}
+
+model DocumentAnalysis {
+  id                   String                @id @default(cuid())
+  userId               String
+  documentId           String                @unique
+  subject              String?               @db.VarChar(240)
+  status               ProcessingStatus      @default(QUEUED)
+  progress             Int                   @default(0)
+  stage                String?               @db.VarChar(160)
+  error                String?               @db.Text
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document             Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extractedPages       ExtractedPage[]
+  topics               Topic[]
+  conceptSources       ConceptSource[]
+  conceptRelationships ConceptRelationship[]
+
+  @@index([userId, status, createdAt])
+}
+
+model ExtractedPage {
+  id                 String           @id @default(cuid())
+  documentId         String
+  documentAnalysisId String
+  pageNumber         Int
+  originalText       String           @db.Text
+  textContext        String           @db.Text
+  section            String           @db.VarChar(500)
+  headings           Json
+  subheadings        Json
+  paragraphs         Json
+  definitions        Json
+  examples           Json
+  formulas           Json
+  tables             Json
+  importantTerms     Json
+  sections           Json
+  createdAt          DateTime         @default(now())
+  document           Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentAnalysis   DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, pageNumber])
+  @@index([documentAnalysisId, pageNumber])
+}
+
+model Topic {
+  id                 String           @id @default(cuid())
+  documentAnalysisId String
+  parentId           String?
+  name               String           @db.VarChar(240)
+  normalizedName     String           @db.VarChar(240)
+  description        String           @db.Text
+  createdAt          DateTime         @default(now())
+  documentAnalysis   DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+  parent             Topic?           @relation("TopicHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children           Topic[]          @relation("TopicHierarchy")
+  concepts           TopicConcept[]
+
+  @@unique([documentAnalysisId, normalizedName])
+  @@index([parentId])
+}
+
+model Concept {
+  id                    String                @id @default(cuid())
+  userId                String
+  name                  String                @db.VarChar(240)
+  normalizedName        String                @db.VarChar(240)
+  definition            String                @db.Text
+  detailedExplanation   String                @db.Text
+  examples              String[]              @default([])
+  formulas              String[]              @default([])
+  importantFacts        String[]              @default([])
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sources               ConceptSource[]
+  topics                TopicConcept[]
+  outgoingRelationships ConceptRelationship[] @relation("ConceptOutgoing")
+  incomingRelationships ConceptRelationship[] @relation("ConceptIncoming")
+
+  @@unique([userId, normalizedName])
+  @@index([userId, updatedAt])
+}
+
+model TopicConcept {
+  topicId   String
+  conceptId String
+  topic     Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@id([topicId, conceptId])
+  @@index([conceptId])
+}
+
+model ConceptSource {
+  id                 String           @id @default(cuid())
+  conceptId          String
+  documentAnalysisId String
+  documentId         String
+  pageNumber         Int
+  excerpt            String           @db.Text
+  sourceContext      Json
+  createdAt          DateTime         @default(now())
+  concept            Concept          @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  documentAnalysis   DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+  document           Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([conceptId, documentAnalysisId, pageNumber])
+  @@index([documentId, pageNumber])
+}
+
+model ConceptRelationship {
+  id                 String                  @id @default(cuid())
+  userId             String
+  documentAnalysisId String
+  fromConceptId      String
+  toConceptId        String
+  type               ConceptRelationshipType
+  evidence           String                  @db.Text
+  sourcePageNumbers  Int[]                   @default([])
+  createdAt          DateTime                @default(now())
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentAnalysis   DocumentAnalysis        @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+  fromConcept        Concept                 @relation("ConceptOutgoing", fields: [fromConceptId], references: [id], onDelete: Cascade)
+  toConcept          Concept                 @relation("ConceptIncoming", fields: [toConceptId], references: [id], onDelete: Cascade)
+
+  @@unique([documentAnalysisId, fromConceptId, toConceptId, type])
+  @@index([userId, fromConceptId])
+  @@index([userId, toConceptId])
 }

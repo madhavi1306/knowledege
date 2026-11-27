@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
+import AnalysisPage from './pages/AnalysisPage.jsx'
 import DashboardLayout from './layouts/DashboardLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import LandingPage from './pages/LandingPage.jsx'
@@ -25,6 +26,7 @@ export default function App() {
       <Route path="/app" element={<ProtectedLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="papers" element={<MyPapersPage />} />
+        <Route path="papers/:documentId/analysis" element={<AnalysisPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

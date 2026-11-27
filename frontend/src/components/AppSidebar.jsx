@@ -54,7 +54,7 @@ export default function AppSidebar({ open, onClose, collapsed, onToggleCollapsed
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navigation.map(({ label, icon: Icon, to }) => (
             to ? (
-              <NavLink key={label} to={to} end className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`} title={collapsed ? label : undefined}>
+              <NavLink key={label} to={to} end={to === '/app'} className={({ isActive }) => `sidebar-link${isActive ? ' sidebar-link-active' : ''}`} title={collapsed ? label : undefined}>
                 <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
               </NavLink>
             ) : (

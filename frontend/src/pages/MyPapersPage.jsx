@@ -9,10 +9,12 @@ import {
   LoaderCircle,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import UploadDialog from '../components/UploadDialog.jsx'
 import { apiRequest } from '../services/api.js'
 import { MAX_PDF_SIZE_MB } from '../services/documents.js'
@@ -34,8 +36,15 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value))
 }
 
-function DocumentCard({ document, onDetails, onDelete, deleting }) {
+function DocumentCard({ document, onDetails, onDelete, deleting, selected, onSelect, onAnalyze, analyzing }) {
   const status = statusLabels[document.uploadStatus] || 'Uploaded'
+  const selectable = ['UPLOADED', 'FAILED'].includes(document.uploadStatus)
+  const actionLabel = {
+    UPLOADED: 'Analyze',
+    FAILED: 'Retry analysis',
+    PROCESSING: 'View progress',
+    ANALYSIS_COMPLETED: 'View analysis',
+  }[document.uploadStatus] || 'Analyze'
 
   return (
     <motion.article
@@ -47,6 +56,16 @@ function DocumentCard({ document, onDetails, onDelete, deleting }) {
       transition={{ duration: 0.18 }}
     >
       <div className="paper-card-main">
+        {selectable && (
+          <label className="paper-select">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onSelect(document.id)}
+              aria-label={`Select ${document.fileName} for batch analysis`}
+            />
+          </label>
+        )}
         <span className="paper-file-icon"><FileText size={22} strokeWidth={1.8} /><small>PDF</small></span>
         <div className="paper-card-copy">
           <a className="paper-card-title" href={`/api/documents/${encodeURIComponent(document.id)}/file`} target="_blank" rel="noopener noreferrer" title={`Open ${document.fileName}`}>
@@ -64,6 +83,10 @@ function DocumentCard({ document, onDetails, onDelete, deleting }) {
       <div className="paper-card-footer">
         <span className="paper-card-type"><FolderOpen size={13} /> Personal papers</span>
         <div className="paper-card-actions">
+          <button type="button" className="paper-action-button paper-analyze-button" onClick={() => onAnalyze(document)} disabled={analyzing}>
+            {analyzing ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />}
+            {analyzing ? 'Starting…' : actionLabel}
+          </button>
           <button type="button" className="paper-action-button" onClick={() => onDetails(document.id)}><Info size={14} /> Details</button>
           <a className="paper-action-button" href={`/api/documents/${encodeURIComponent(document.id)}/file`} target="_blank" rel="noopener noreferrer"><ArrowDownToLine size={14} /> Open PDF</a>
           <button type="button" className="paper-action-button paper-delete-button" onClick={() => onDelete(document)} disabled={deleting}>
@@ -107,6 +130,7 @@ function DocumentDetails({ document, onClose }) {
 }
 
 export default function MyPapersPage() {
+  const navigate = useNavigate()
   const [documents, setDocuments] = useState([])
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -120,6 +144,10 @@ export default function MyPapersPage() {
   const [details, setDetails] = useState(null)
   const [detailsError, setDetailsError] = useState('')
   const [deletingId, setDeletingId] = useState('')
+  const [selectedIds, setSelectedIds] = useState([])
+  const [analyzingId, setAnalyzingId] = useState('')
+  const [batchAnalyzing, setBatchAnalyzing] = useState(false)
+  const [batchMessage, setBatchMessage] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -184,6 +212,7 @@ export default function MyPapersPage() {
     try {
       await apiRequest(`/api/documents/${encodeURIComponent(document.id)}`, { method: 'DELETE' })
       setRefreshKey((current) => current + 1)
+      setSelectedIds((current) => current.filter((id) => id !== document.id))
       if (details?.id === document.id) setDetails(null)
     } catch (requestError) {
       setError(requestError.message)
@@ -194,6 +223,54 @@ export default function MyPapersPage() {
 
   function refreshDocuments() {
     setRefreshKey((current) => current + 1)
+  }
+
+  function toggleSelected(id) {
+    setSelectedIds((current) => (
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    ))
+  }
+
+  async function startAnalysis(document) {
+    setError('')
+    setBatchMessage('')
+    if (['PROCESSING', 'ANALYSIS_COMPLETED'].includes(document.uploadStatus)) {
+      navigate(`/app/papers/${encodeURIComponent(document.id)}/analysis`)
+      return
+    }
+
+    setAnalyzingId(document.id)
+    try {
+      await apiRequest(`/api/analysis/${encodeURIComponent(document.id)}`, { method: 'POST' })
+      setRefreshKey((current) => current + 1)
+      navigate(`/app/papers/${encodeURIComponent(document.id)}/analysis`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setAnalyzingId('')
+    }
+  }
+
+  async function startBatchAnalysis() {
+    if (!selectedIds.length || batchAnalyzing) return
+    const documentIds = [...selectedIds]
+    setBatchAnalyzing(true)
+    setError('')
+    setBatchMessage('')
+    try {
+      await apiRequest('/api/analysis/batch', {
+        method: 'POST',
+        body: JSON.stringify({ documentIds }),
+      })
+      setSelectedIds([])
+      setBatchMessage(`Analysis started for ${documentIds.length} ${documentIds.length === 1 ? 'paper' : 'papers'}.`)
+      setRefreshKey((current) => current + 1)
+      navigate(`/app/papers/${encodeURIComponent(documentIds[0])}/analysis`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setBatchAnalyzing(false)
+    }
   }
 
   return (
@@ -208,6 +285,14 @@ export default function MyPapersPage() {
           <Plus size={17} /> Upload PDFs
         </button>
       </header>
+      {selectedIds.length > 0 && (
+        <div className="papers-batch-toolbar">
+          <span>{selectedIds.length} {selectedIds.length === 1 ? 'paper' : 'papers'} selected</span>
+          <button className="button button-primary" onClick={startBatchAnalysis} disabled={batchAnalyzing}>
+            {batchAnalyzing ? <><LoaderCircle className="spin" size={15} /> Starting…</> : <><Sparkles size={15} /> Analyze selected</>}
+          </button>
+        </div>
+      )}
 
       <section className="papers-library" aria-label="Your PDF library">
         <div className="papers-toolbar">
@@ -236,6 +321,7 @@ export default function MyPapersPage() {
         </div>
 
         {error && <div className="papers-alert" role="alert"><AlertCircle size={16} />{error}</div>}
+        {batchMessage && <div className="papers-success" role="status">{batchMessage}</div>}
 
         {loading ? (
           <div className="papers-loading"><LoaderCircle className="spin" size={22} /><span>Loading your papers…</span></div>
@@ -250,6 +336,10 @@ export default function MyPapersPage() {
                     onDetails={showDetails}
                     onDelete={deleteDocument}
                     deleting={deletingId === document.id}
+                    selected={selectedIds.includes(document.id)}
+                    onSelect={toggleSelected}
+                    onAnalyze={startAnalysis}
+                    analyzing={analyzingId === document.id}
                   />
                 ))}
               </AnimatePresence>

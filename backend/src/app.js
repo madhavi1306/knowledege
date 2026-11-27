@@ -4,22 +4,30 @@ import express from 'express'
 import helmet from 'helmet'
 import { errorHandler } from './middleware/error-handler.js'
 import { createAuthRoutes } from './routes/auth-routes.js'
+import { createAnalysisRoutes } from './routes/analysis-routes.js'
 import { createDocumentRoutes } from './routes/document-routes.js'
 import { createProfileRoutes } from './routes/profile-routes.js'
+import { createAnalysisService } from './services/analysis-service.js'
 
-export function createApp(prisma, documentOptions) {
+export function createApp(prisma, documentOptions, analysisOptions) {
   const app = express()
   const frontendOrigin = process.env.FRONTEND_URL || 'http://localhost:5173'
+  const analysisService = createAnalysisService(prisma, {
+    ...documentOptions,
+    ...analysisOptions,
+  })
 
   app.disable('x-powered-by')
   app.use(helmet())
   app.use(cors({ origin: frontendOrigin, credentials: true }))
-  app.use(express.json({ limit: '16kb' }))
+  app.use(express.json({ limit: '256kb' }))
   app.use(cookieParser())
+  app.locals.analysisService = analysisService
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
   app.use('/api/auth', createAuthRoutes(prisma))
   app.use('/api/profile', createProfileRoutes(prisma))
   app.use('/api/documents', createDocumentRoutes(prisma, documentOptions))
+  app.use('/api/analysis', createAnalysisRoutes(analysisService))
   app.use((_req, res) => res.status(404).json({ error: 'Not found.' }))
   app.use(errorHandler)
   return app
