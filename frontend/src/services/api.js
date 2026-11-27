@@ -18,7 +18,8 @@ export async function apiRequest(path, options = {}) {
         ...options.headers,
       },
     })
-  } catch {
+  } catch (error) {
+    if (error.name === 'AbortError') throw error
     throw new ApiError('We could not reach KNOWFLOW. Check that the backend is running and try again.', 0)
   }
 

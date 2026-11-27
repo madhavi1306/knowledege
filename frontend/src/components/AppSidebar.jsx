@@ -19,7 +19,7 @@ import { useAuth } from '../context/useAuth.js'
 
 const navigation = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/app' },
-  { label: 'My Papers', icon: BookOpen },
+  { label: 'My Papers', icon: BookOpen, to: '/app/papers' },
   { label: 'Knowledge Map', icon: Map },
   { label: 'Learning Path', icon: Compass },
   { label: 'AI Tutor', icon: BrainCircuit },

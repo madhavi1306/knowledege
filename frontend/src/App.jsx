@@ -4,6 +4,7 @@ import DashboardLayout from './layouts/DashboardLayout.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import LandingPage from './pages/LandingPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
+import MyPapersPage from './pages/MyPapersPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/app" element={<ProtectedLayout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="papers" element={<MyPapersPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

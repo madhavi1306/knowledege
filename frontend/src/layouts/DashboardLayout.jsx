@@ -4,6 +4,7 @@ import AppSidebar from '../components/AppSidebar.jsx'
 import AppTopbar from '../components/AppTopbar.jsx'
 
 function pageTitle(pathname) {
+  if (pathname.endsWith('/papers')) return 'My Papers'
   return pathname.endsWith('/profile') ? 'Your profile' : 'Dashboard'
 }
 

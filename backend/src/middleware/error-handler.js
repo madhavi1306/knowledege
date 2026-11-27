@@ -1,11 +1,31 @@
 import { ZodError } from 'zod'
+import multer from 'multer'
+import { HttpError } from '../utils/http-error.js'
 
-export function errorHandler(error, _req, res, _next) {
+export function errorHandler(error, req, res, _next) {
+  req.releaseUploadSlot?.()
+
   if (error instanceof ZodError) {
     return res.status(400).json({
       error: error.issues[0]?.message ?? 'Please check the information you entered.',
       issues: error.issues.map(({ path, message }) => ({ path, message })),
     })
+  }
+
+  if (error instanceof HttpError) {
+    return res.status(error.status).json({ error: error.message })
+  }
+
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        error: `This PDF is larger than the per-file limit of ${req.maxPdfSizeMb} MB.`,
+      })
+    }
+    if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'Upload one PDF per queued request.' })
+    }
+    return res.status(400).json({ error: 'The PDF upload could not be accepted.' })
   }
 
   if (error?.type === 'entity.too.large') {

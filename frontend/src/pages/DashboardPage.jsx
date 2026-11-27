@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import {
+  ArrowRight,
   BookOpen,
   BrainCircuit,
   CheckCircle2,
@@ -10,17 +11,43 @@ import {
   Sparkles,
   Target,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
+import { apiRequest } from '../services/api.js'
 
-const overview = [
-  { label: 'Papers added', value: '0', detail: 'Your library is ready', icon: FileText, tint: 'blue' },
-  { label: 'Concepts explored', value: '0', detail: 'Ideas you have connected', icon: BrainCircuit, tint: 'violet' },
-  { label: 'Learning progress', value: '0%', detail: 'Your journey starts here', icon: Target, tint: 'mint' },
-]
+function activityDate(value) {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(value))
+}
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  const [papers, setPapers] = useState({ totalCount: null, items: [], error: '' })
   const firstName = user?.name?.trim().split(/\s+/)[0] || 'learner'
+
+  useEffect(() => {
+    let active = true
+    apiRequest('/api/documents?limit=5')
+      .then((result) => {
+        if (active) setPapers({ totalCount: result.totalCount, items: result.items, error: '' })
+      })
+      .catch((error) => {
+        if (active) setPapers({ totalCount: null, items: [], error: error.message })
+      })
+    return () => { active = false }
+  }, [])
+
+  const overview = [
+    {
+      label: 'Papers added',
+      value: papers.totalCount === null ? '—' : papers.totalCount,
+      detail: papers.error ? 'Papers could not be loaded' : papers.totalCount === null ? 'Syncing your library' : 'In your private library',
+      icon: FileText,
+      tint: 'blue',
+    },
+    { label: 'Concepts explored', value: '0', detail: 'No concepts analyzed yet', icon: BrainCircuit, tint: 'violet' },
+    { label: 'Learning progress', value: '0%', detail: 'Learning progress starts later', icon: Target, tint: 'mint' },
+  ]
 
   return (
     <div className="dashboard-page">
@@ -33,7 +60,7 @@ export default function DashboardPage() {
         <div className="welcome-copy">
           <span className="eyebrow"><Sparkles size={14} /> A FRESH PAGE</span>
           <h2>Welcome to your flow, {firstName}<span className="welcome-wave">✦</span></h2>
-          <p>Your learning space is ready. When you're ready, bring in something you'd like to understand.</p>
+          <p>Your learning space is ready. Bring in a PDF whenever you’re ready to start learning from it.</p>
         </div>
         <div className="welcome-art" aria-hidden="true">
           <div className="welcome-art-circle circle-back" />
@@ -83,11 +110,23 @@ export default function DashboardPage() {
             <div><span className="eyebrow">THE LATEST</span><h3>Recent activity</h3></div>
             <span className="activity-clock"><Clock3 size={16} /></span>
           </div>
-          <div className="activity-empty">
-            <span className="empty-icon"><CircleDashed size={23} /></span>
-            <strong>A little room for what’s next</strong>
-            <p>Your learning activity will appear here once you get started.</p>
-          </div>
+          {papers.items.length > 0 ? (
+            <div className="recent-paper-list">
+              {papers.items.slice(0, 4).map((paper) => (
+                <Link className="recent-paper" to={`/app/papers`} key={paper.id}>
+                  <span className="recent-paper-icon"><FileText size={15} /></span>
+                  <span className="recent-paper-copy"><strong title={paper.fileName}>{paper.fileName}</strong><small>PDF added · {activityDate(paper.uploadedAt)}</small></span>
+                  <span className={`document-status status-${paper.uploadStatus.toLowerCase()}`}>{paper.uploadStatus === 'UPLOADED' ? 'Uploaded' : paper.uploadStatus}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="activity-empty">
+              <span className="empty-icon"><CircleDashed size={23} /></span>
+              <strong>{papers.error ? 'Your papers are unavailable' : 'A little room for what’s next'}</strong>
+              <p>{papers.error || 'Your recent paper uploads will appear here.'}</p>
+            </div>
+          )}
         </section>
       </div>
 
@@ -95,10 +134,10 @@ export default function DashboardPage() {
         <div className="next-step-icon"><CheckCircle2 size={20} /></div>
         <div className="next-step-copy">
           <span className="eyebrow">YOUR NEXT STEP</span>
-          <h3>Your space is set up. You’re ready for your first paper.</h3>
-          <p>Document learning is coming in the next phase. Nothing to set up right now.</p>
+          <h3>{papers.totalCount ? 'Keep your study materials in one place.' : 'Add a paper to start your library.'}</h3>
+          <p>Upload one PDF or a whole batch. There’s no document-count limit.</p>
         </div>
-        <span className="next-step-soon"><BookOpen size={15} /> Coming soon</span>
+        <Link className="next-step-link" to="/app/papers">{papers.totalCount ? 'View papers' : 'My Papers'} <ArrowRight size={15} /></Link>
       </section>
       <div className="dashboard-footer-note"><span><Sparkles size={13} /></span> Your learning data is private and belongs to you.</div>
     </div>
