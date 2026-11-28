@@ -9,14 +9,22 @@ export class ApiError extends Error {
 
 export async function apiRequest(path, options = {}) {
   let response
+  const hasBody = options.body !== undefined && options.body !== null
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
+  const shouldStringify = hasBody && !isFormData && typeof options.body !== 'string'
+  const body = shouldStringify ? JSON.stringify(options.body) : options.body
+
+  const headers = {
+    ...(hasBody && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+    ...options.headers,
+  }
+
   try {
     response = await fetch(path, {
       ...options,
+      body,
       credentials: 'same-origin',
-      headers: {
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...options.headers,
-      },
+      headers,
     })
   } catch (error) {
     if (error.name === 'AbortError') throw error

@@ -28,7 +28,7 @@ Copy-Item .env.example .env
 
 Edit `backend/.env` and set `DATABASE_URL` to your PostgreSQL username, password, host, port, and database. Replace `JWT_SECRET` with a private random value of at least 32 characters. Do not commit `.env`.
 `STORAGE_DIR` defaults to the private `backend/storage` folder. Choose a durable, non-public path for deployed environments. `MAX_PDF_SIZE_MB` defaults to 50 MB per file and can be changed to fit available resources. There is no total document-count limit. `UPLOAD_CONCURRENCY` controls simultaneous server-side validation and defaults to 2.
-Set `OPENAI_API_KEY` and `OPENAI_MODEL` in `backend/.env` to enable real AI analysis. `OPENAI_BASE_URL` can point to an OpenAI-compatible provider. The API key stays on the backend. Extracted PDF text is sent to that configured provider for analysis; do not enable a provider unless that data transfer is acceptable. Without provider configuration, analysis is marked failed with a clear setup message rather than returning mock results.
+Set `OPENAI_API_KEY` and `OPENAI_MODEL` in `backend/.env` to enable real AI analysis, topic learning explanations, and voice answers. Set `OPENAI_VISION_MODEL` to a vision-capable model for analysis of rendered PDF page images; it defaults to `OPENAI_MODEL`. `OPENAI_BASE_URL` can point to an OpenAI-compatible provider. The API key stays on the backend. Extracted PDF text and, for visual explanations, rendered page images are sent to that provider; do not enable a provider unless that data transfer is acceptable. Without provider configuration or when the provider fails, analysis is marked failed and visuals remain available with an explicit explanation error rather than fabricated results.
 `ANALYSIS_CHUNK_CHARACTERS` defaults to 12000 characters per AI request and `ANALYSIS_CONCURRENCY` defaults to one document at a time. These settings bound per-request context and processing load; documents are split into sequential chunks.
 
 Set up the PDF processor from `knowflow/backend` in PowerShell:
@@ -58,8 +58,8 @@ npm run db:deploy
 npm run dev
 ```
 
-The API listens at `http://localhost:4000`. It checks the PostgreSQL connection before starting; a missing or unavailable database is reported as an error.
-Run `npm run db:deploy` after each phase adds a migration. The Phase 3 migration adds persisted page extraction, analysis progress, topics, concepts, source references, and relationships.
+The API listens at `http://localhost:4000`. If PostgreSQL is unavailable, the server reports this and uses persistent JSON storage under `backend/storage`; `/api/health` reports the active storage backend. For production, start PostgreSQL and apply migrations before serving users.
+Run `npm run db:deploy` after schema changes. The extracted-page visual metadata migration is additive and preserves existing page data.
 
 ## Run the frontend
 

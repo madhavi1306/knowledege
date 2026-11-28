@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm } from 'node:fs/promises'
@@ -8,6 +9,19 @@ const SCRIPT_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../pdf_processor/extract_pdf.py',
 )
+
+function resolvePythonExecutable() {
+  const envVal = process.env.PYTHON_EXECUTABLE
+  if (envVal && existsSync(envVal)) return envVal
+  const candidates = [
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Python', 'bin', 'python.exe') : null,
+    'C:\\Users\\Admin\\AppData\\Local\\Python\\bin\\python.exe',
+  ].filter(Boolean)
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  return envVal || 'python'
+}
 
 function runExtractor(executable, pdfPath, outputPath, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -51,7 +65,7 @@ export async function extractPdfPages(pdfPath, settings = {}) {
   const storageDir = settings.storageDir
   const temporaryDirectory = path.join(storageDir, '.tmp')
   const outputPath = path.join(temporaryDirectory, `${randomUUID()}.pages.json`)
-  const executable = process.env.PYTHON_EXECUTABLE || 'python'
+  const executable = resolvePythonExecutable()
   const timeoutMs = Number(process.env.PDF_EXTRACTION_TIMEOUT_MS || 300000)
 
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) {

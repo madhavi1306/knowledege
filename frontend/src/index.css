@@ -39,3 +39,25 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
+/* Ensure clean typography and prevent text collisions in diagrams and cards */
+.mermaid-wrapper svg {
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-wrapper .node foreignObject div,
+.mermaid-wrapper .node text,
+.mermaid-wrapper .edgeLabel foreignObject div,
+.mermaid-wrapper .edgeLabel text,
+.mermaid-wrapper tspan {
+  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif !important;
+  line-height: 1.5 !important;
+  word-break: break-word !important;
+}
+
+/* Learning text readability */
+.learning-reading-text {
+  line-height: 1.8 !important;
+  letter-spacing: 0.01em;
+}
+
+

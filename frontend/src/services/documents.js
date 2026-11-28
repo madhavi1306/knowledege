@@ -37,3 +37,27 @@ export function uploadDocument(file, onProgress) {
 
   return { promise, abort: () => xhr.abort() }
 }
+
+export async function uploadRawText(title, content) {
+  const res = await fetch('/api/documents/text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ title, content }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new ApiError(data.error || 'Failed to save text material.', res.status)
+  return data.document
+}
+
+export async function uploadUrl(url, title) {
+  const res = await fetch('/api/documents/url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ url, title }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new ApiError(data.error || 'Failed to import web article.', res.status)
+  return data.document
+}

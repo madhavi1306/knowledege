@@ -17,6 +17,14 @@ model User {
   analyses             DocumentAnalysis[]
   concepts             Concept[]
   conceptRelationships ConceptRelationship[]
+  masteryRecords       ConceptMastery[]
+  quizSessions         QuizSession[]
+  recoverySessions     RecoverySession[]
+  spacedReviews        SpacedReview[]
+  learningMaterials    TopicLearningMaterial[]
+  chatSessions         DocumentChatSession[]
+  weakTopicRecords     WeakTopicRecord[]
+  activityEvents       LearningActivityEvent[]
 }
 
 enum DocumentUploadStatus {
@@ -39,6 +47,48 @@ enum ConceptRelationshipType {
   DEPENDS_ON
 }
 
+enum VisualType {
+  DIAGRAM
+  FLOWCHART
+  MAP
+  GRAPH
+  CHART
+  TABLE
+  ILLUSTRATION
+  ARCHITECTURE
+  IMAGE
+  UNKNOWN
+}
+
+enum MasteryStatus {
+  NOT_LEARNED
+  LEARNING
+  WEAK
+  IMPROVING
+  MASTERED
+  REVISION_REQUIRED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_IN_BLANKS
+  SHORT_ANSWER
+  APPLICATION
+  SCENARIO
+  COMPARISON
+  PROBLEM_SOLVING
+  CONCEPT_BASED
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  DIFFICULT
+  APPLICATION
+  ANALYTICAL
+}
+
 model Document {
   id               String               @id @default(cuid())
   userId           String
@@ -55,6 +105,12 @@ model Document {
   analysis         DocumentAnalysis?
   extractedPages   ExtractedPage[]
   conceptSources   ConceptSource[]
+  learningMaterials TopicLearningMaterial[]
+  visuals          DocumentVisual[]
+  chatSessions     DocumentChatSession[]
+  quizSessions     QuizSession[]
+  weakTopicRecords WeakTopicRecord[]
+  activityEvents   LearningActivityEvent[]
 
   @@unique([userId, contentHash])
   @@index([userId, uploadedAt])
@@ -98,6 +154,7 @@ model ExtractedPage {
   examples           Json
   formulas           Json
   tables             Json
+  visuals            Json             @default("{}")
   importantTerms     Json
   sections           Json
   createdAt          DateTime         @default(now())
@@ -109,20 +166,57 @@ model ExtractedPage {
 }
 
 model Topic {
-  id                 String           @id @default(cuid())
+  id                 String                 @id @default(cuid())
   documentAnalysisId String
   parentId           String?
-  name               String           @db.VarChar(240)
-  normalizedName     String           @db.VarChar(240)
-  description        String           @db.Text
-  createdAt          DateTime         @default(now())
-  documentAnalysis   DocumentAnalysis @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
-  parent             Topic?           @relation("TopicHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children           Topic[]          @relation("TopicHierarchy")
+  orderIndex         Int                    @default(0)
+  name               String                 @db.VarChar(240)
+  normalizedName     String                 @db.VarChar(240)
+  description        String                 @db.Text
+  createdAt          DateTime               @default(now())
+  documentAnalysis   DocumentAnalysis       @relation(fields: [documentAnalysisId], references: [id], onDelete: Cascade)
+  parent             Topic?                 @relation("TopicHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children           Topic[]                @relation("TopicHierarchy")
   concepts           TopicConcept[]
+  learningMaterial   TopicLearningMaterial?
 
   @@unique([documentAnalysisId, normalizedName])
   @@index([parentId])
+}
+
+model TopicLearningMaterial {
+  id                    String   @id @default(cuid())
+  topicId               String   @unique
+  documentId            String
+  documentAnalysisId    String
+  userId                String
+  orderIndex            Int      @default(0)
+  chapterTitle          String?  @db.VarChar(240)
+  topicTitle            String   @db.VarChar(240)
+  simpleDefinition      String   @db.Text
+  easyExplanation       String   @db.Text
+  detailedExplanation   String   @db.Text
+  stepByStepExplanation String[] @default([])
+  realWorldExample      String   @db.Text
+  importantPoints       String[] @default([])
+  difficultWords        Json     @default("[]")
+  relatedConcepts       String[] @default([])
+  pageReferences        Int[]    @default([])
+  quickRevisionNotes    String[] @default([])
+  keyThingsToRemember   String[] @default([])
+  status                String   @default("NOT_STARTED") @db.VarChar(50)
+  generationStatus      String   @default("COMPLETED") @db.VarChar(50)
+  generationError       String?  @db.Text
+  lastGeneratedAt       DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  topic    Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, orderIndex])
+  @@index([userId, status])
 }
 
 model Concept {
@@ -132,6 +226,14 @@ model Concept {
   normalizedName        String                @db.VarChar(240)
   definition            String                @db.Text
   detailedExplanation   String                @db.Text
+  simpleExplanation     String?               @db.Text
+  analogy               String?               @db.Text
+  realLifeExample       String?               @db.Text
+  stepByStepExplanation String[]              @default([])
+  misconceptions        String[]              @default([])
+  learningObjectives    String[]              @default([])
+  difficulty            String                @default("MEDIUM") @db.VarChar(50)
+  importance            String                @default("HIGH") @db.VarChar(50)
   examples              String[]              @default([])
   formulas              String[]              @default([])
   importantFacts        String[]              @default([])
@@ -142,6 +244,10 @@ model Concept {
   topics                TopicConcept[]
   outgoingRelationships ConceptRelationship[] @relation("ConceptOutgoing")
   incomingRelationships ConceptRelationship[] @relation("ConceptIncoming")
+  mastery               ConceptMastery?
+  quizQuestions         QuizQuestion[]
+  recoverySteps         RecoveryStep[]
+  spacedReview          SpacedReview?
 
   @@unique([userId, normalizedName])
   @@index([userId, updatedAt])
@@ -192,4 +298,277 @@ model ConceptRelationship {
   @@unique([documentAnalysisId, fromConceptId, toConceptId, type])
   @@index([userId, fromConceptId])
   @@index([userId, toConceptId])
+}
+
+model ConceptMastery {
+  id              String        @id @default(cuid())
+  userId          String
+  conceptId       String        @unique
+  status          MasteryStatus @default(NOT_LEARNED)
+  masteryScore    Float         @default(0.0) // 0 to 100
+  totalAttempts   Int           @default(0)
+  correctAttempts Int           @default(0)
+  lastAssessedAt  DateTime?
+  lastReteachedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept         Concept       @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model QuizSession {
+  id                  String         @id @default(cuid())
+  userId              String
+  documentId          String?
+  documentAnalysisId  String?
+  scope               String         @default("DOCUMENT") @db.VarChar(50) // TOPIC, CHAPTER, DOCUMENT
+  topicId             String?
+  topicName           String?        @db.VarChar(240)
+  chapterTitle        String?        @db.VarChar(240)
+  mode                String         @default("COMPREHENSIVE") @db.VarChar(50) // COMPREHENSIVE, TOPIC, WEAK_ONLY, QUICK
+  difficulty          String         @default("MEDIUM") @db.VarChar(50) // EASY, MEDIUM, HARD
+  totalQuestions      Int            @default(0)
+  correctCount        Int            @default(0)
+  incorrectCount      Int            @default(0)
+  scorePercentage     Float          @default(0.0)
+  completed           Boolean        @default(false)
+  completedAt         DateTime?
+  evaluationSummary   Json?
+  topicPerformance    Json?          @default("[]")
+  weakConceptNames    String[]       @default([])
+  strongConceptNames  String[]       @default([])
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document            Document?      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  questions           QuizQuestion[]
+  recoverySession     RecoverySession?
+
+  @@index([userId, createdAt])
+  @@index([documentId, createdAt])
+}
+
+model QuizQuestion {
+  id               String             @id @default(cuid())
+  quizSessionId    String
+  conceptId        String?
+  conceptName      String             @db.VarChar(240)
+  topicName        String?            @db.VarChar(240)
+  pageNumber       Int?
+  questionText     String             @db.Text
+  type             QuestionType       @default(MULTIPLE_CHOICE)
+  difficulty       QuestionDifficulty @default(MEDIUM)
+  options          String[]           @default([])
+  correctAnswer    String             @db.Text
+  explanation      String             @db.Text
+  documentExcerpt  String?            @db.Text
+  userAnswer       String?            @db.Text
+  isCorrect        Boolean?
+  gapAnalysis      String?            @db.Text
+  createdAt        DateTime           @default(now())
+  quizSession      QuizSession        @relation(fields: [quizSessionId], references: [id], onDelete: Cascade)
+  concept          Concept?           @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+
+  @@index([quizSessionId])
+  @@index([conceptId])
+}
+
+model RecoverySession {
+  id                 String         @id @default(cuid())
+  userId             String
+  quizSessionId      String?        @unique
+  status             String         @default("IN_PROGRESS") @db.VarChar(50) // IN_PROGRESS, COMPLETED
+  weakConceptNames   String[]       @default([])
+  overallProgress    Float          @default(0.0)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quizSession        QuizSession?   @relation(fields: [quizSessionId], references: [id], onDelete: SetNull)
+  steps              RecoveryStep[]
+
+  @@index([userId, status])
+}
+
+model RecoveryStep {
+  id                 String          @id @default(cuid())
+  recoverySessionId  String
+  conceptId          String?
+  conceptName        String          @db.VarChar(240)
+  stepOrder          Int             @default(1)
+  status             String          @default("PENDING") @db.VarChar(50) // PENDING, RETEACHED, TESTED, MASTERED
+  approachUsed       String          @default("ANALOGY") @db.VarChar(50) // ANALOGY, STEP_BY_STEP, VISUAL_CONCRETE
+  reteachContent     Json?
+  miniTestScore      Float?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  recoverySession    RecoverySession @relation(fields: [recoverySessionId], references: [id], onDelete: Cascade)
+  concept            Concept?        @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+
+  @@index([recoverySessionId, stepOrder])
+}
+
+model SpacedReview {
+  id              String    @id @default(cuid())
+  userId          String
+  conceptId       String    @unique
+  stability       Float     @default(1.0)
+  difficulty      Float     @default(5.0)
+  reps            Int       @default(0)
+  lapses          Int       @default(0)
+  lastReviewDate  DateTime?
+  nextReviewDate  DateTime  @default(now())
+  retentionScore  Float     @default(1.0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept         Concept   @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@index([userId, nextReviewDate])
+}
+
+model DocumentVisual {
+  id                    String     @id @default(cuid())
+  documentId            String
+  documentAnalysisId    String?
+  pageNumber            Int
+  visualIndex           Int        @default(0)
+  type                  VisualType @default(DIAGRAM)
+  imagePath             String?    @db.VarChar(500)
+  storageKey            String?    @db.VarChar(240)
+  caption               String?    @db.VarChar(500)
+  boundingBox           Json?
+
+  // 11 Required Explanation Elements
+  title                 String     @db.VarChar(300)
+  whatItRepresents      String     @db.Text
+  purpose               String     @db.Text
+  partsExplanation      Json       @default("[]")
+  labelsExplanation     Json       @default("[]")
+  arrowsExplanation     String?    @db.Text
+  connections           Json       @default("[]")
+  stepByStepProcess     String[]   @default([])
+  easyExample           String?    @db.Text
+  difficultWords        Json       @default("[]")
+  importantPoints       String[]   @default([])
+
+  // Simplified Diagram (Clearly distinguished AI simplified representation)
+  simplifiedDiagram     String?    @db.Text
+  simplifiedDiagramType String?    @default("mermaid") @db.VarChar(50)
+
+  associatedTopicId     String?
+  status                String     @default("COMPLETED") @db.VarChar(50)
+  error                 String?    @db.Text
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, pageNumber])
+  @@index([documentId, type])
+}
+
+model DocumentChatSession {
+  id             String                @id @default(cuid())
+  userId         String
+  documentId     String
+  topicId        String?
+  title          String                @default("Document Q&A Session") @db.VarChar(240)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document       Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  messages       DocumentChatMessage[]
+
+  @@index([userId, documentId])
+  @@index([documentId, updatedAt])
+}
+
+model DocumentChatMessage {
+  id                String              @id @default(cuid())
+  sessionId         String
+  role              String              @db.VarChar(20) // user, assistant, system
+  content           String              @db.Text
+  directAnswer      String?             @db.Text
+  simpleExplanation String?             @db.Text
+  example           String?             @db.Text
+  importantPoints   String[]            @default([])
+  pageReferences    Int[]               @default([])
+  retrievedChunks   Json                @default("[]")
+  citations         Json                @default("[]")
+  supplementary     Boolean             @default(false)
+  notCovered        Boolean             @default(false)
+  createdAt         DateTime            @default(now())
+  session           DocumentChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model WeakTopicRecord {
+  id                      String                 @id @default(cuid())
+  userId                  String
+  documentId              String
+  topicId                 String?
+  topicName               String                 @db.VarChar(240)
+  chapterTitle            String?                @db.VarChar(240)
+  status                  String                 @default("NEEDS_REVISION") @db.VarChar(50) // NEEDS_REVISION, REVISING, REVISED, RETESTED, RESOLVED, REPEATED_DIFFICULTY
+  initialScore            Float                  @default(0.0)
+  currentScore            Float                  @default(0.0)
+  improvementDelta        Float                  @default(0.0)
+  attemptsCount           Int                    @default(1)
+  detectionReason         String                 @db.Text
+  incorrectAnswersHistory Json                   @default("[]")
+  recommendation          String                 @db.Text
+  adaptiveReteach         Json?
+  lastAssessedAt          DateTime               @default(now())
+  lastRevisedAt           DateTime?
+  lastRetestedAt          DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document                Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revisionSessions        TopicRevisionSession[]
+
+  @@unique([userId, documentId, topicName])
+  @@index([userId, status])
+  @@index([documentId, status])
+}
+
+model TopicRevisionSession {
+  id                String          @id @default(cuid())
+  weakTopicRecordId String
+  userId            String
+  documentId        String
+  topicName         String          @db.VarChar(240)
+  previousScore     Float
+  retestScore       Float?
+  improvementDelta  Float?
+  practiceQuestions Json            @default("[]")
+  retestQuestions   Json            @default("[]")
+  completed         Boolean         @default(false)
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  weakTopicRecord   WeakTopicRecord @relation(fields: [weakTopicRecordId], references: [id], onDelete: Cascade)
+
+  @@index([weakTopicRecordId])
+  @@index([userId, documentId])
+}
+
+model LearningActivityEvent {
+  id         String    @id @default(cuid())
+  userId     String
+  documentId String?
+  topicId    String?
+  eventType  String    @db.VarChar(60) // TOPIC_VIEWED, MATERIAL_GENERATED, TOPIC_COMPLETED, TEST_ATTEMPTED, RETEST_COMPLETED, REVISION_STARTED
+  title      String    @db.VarChar(240)
+  details    Json?
+  createdAt  DateTime  @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, documentId])
 }

@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
-import { AlertCircle, Check, FileText, LoaderCircle, RotateCcw, UploadCloud, X } from 'lucide-react'
+import { AlertCircle, Check, FileText, Globe, LoaderCircle, PenTool, RotateCcw, UploadCloud, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { MAX_PDF_SIZE_MB, uploadDocument } from '../services/documents.js'
+import { MAX_PDF_SIZE_MB, uploadDocument, uploadRawText, uploadUrl } from '../services/documents.js'
 
 const MAX_FILE_SIZE = MAX_PDF_SIZE_MB * 1024 * 1024
 const PDF_MIME_TYPES = new Set(['', 'application/pdf', 'application/octet-stream'])
@@ -13,8 +13,9 @@ function readableSize(bytes) {
 
 function makeQueueEntry(file) {
   let error = ''
-  if (!file.name.toLowerCase().endsWith('.pdf')) error = 'This file does not have a PDF filename.'
-  else if (!PDF_MIME_TYPES.has(file.type)) error = 'The selected file type is not a PDF.'
+  const isPdfName = file.name.toLowerCase().endsWith('.pdf')
+  const isPdfType = !file.type || file.type.toLowerCase().includes('pdf') || file.type === 'application/octet-stream'
+  if (!isPdfName && !isPdfType) error = 'The selected file is not a PDF.'
   else if (file.size === 0) error = 'This file is empty.'
   else if (file.size > MAX_FILE_SIZE) error = `This PDF is over the ${MAX_PDF_SIZE_MB} MB per-file limit.`
 
@@ -28,19 +29,24 @@ function makeQueueEntry(file) {
   }
 }
 
-function queueStatus(entry) {
-  if (entry.status === 'queued') return 'Waiting'
-  if (entry.status === 'uploading') return entry.progress >= 100 ? 'Checking PDF' : `Uploading ${entry.progress}%`
-  if (entry.status === 'uploaded') return 'Uploaded'
-  if (entry.status === 'duplicate') return 'Already added'
-  if (entry.status === 'cancelled') return 'Cancelled'
-  return 'Upload failed'
-}
-
 export default function UploadDialog({ onClose, onUploaded }) {
+  const [activeTab, setActiveTab] = useState('pdf') // 'pdf', 'text', 'url'
   const [queue, setQueue] = useState([])
   const [processing, setProcessing] = useState(false)
   const [dragging, setDragging] = useState(false)
+
+  // Raw text state
+  const [textTitle, setTextTitle] = useState('')
+  const [textContent, setTextContent] = useState('')
+  const [textSubmitting, setTextSubmitting] = useState(false)
+  const [textError, setTextError] = useState('')
+
+  // URL state
+  const [webUrl, setWebUrl] = useState('')
+  const [urlTitle, setUrlTitle] = useState('')
+  const [urlSubmitting, setUrlSubmitting] = useState(false)
+  const [urlError, setUrlError] = useState('')
+
   const queueRef = useRef([])
   const activeUploads = useRef(new Map())
   const processingRef = useRef(false)
@@ -58,7 +64,12 @@ export default function UploadDialog({ onClose, onUploaded }) {
 
   function addFiles(fileList) {
     const entries = Array.from(fileList).map(makeQueueEntry)
-    if (entries.length) updateQueue((current) => [...current, ...entries])
+    if (entries.length) {
+      updateQueue((current) => [...current, ...entries])
+      setTimeout(() => {
+        startUploads()
+      }, 60)
+    }
   }
 
   async function startUploads() {
@@ -95,15 +106,14 @@ export default function UploadDialog({ onClose, onUploaded }) {
           )))
         } catch (error) {
           const duplicate = error.status === 409
-          const cancelled = error.name === 'AbortError'
           updateQueue((current) => current.map((entry) => (
             entry.id === nextEntry.id
               ? {
-                  ...entry,
-                  status: cancelled ? 'cancelled' : duplicate ? 'duplicate' : 'failed',
-                  error: cancelled ? '' : error.message,
-                  retryable: !cancelled && !duplicate && (error.status === 0 || error.status >= 500),
-                }
+                ...entry,
+                status: duplicate ? 'duplicate' : 'failed',
+                error: duplicate ? 'Already in your library.' : error.message,
+                retryable: !duplicate,
+              }
               : entry
           )))
         } finally {
@@ -112,153 +122,244 @@ export default function UploadDialog({ onClose, onUploaded }) {
       }
     }
 
+    await Promise.all([worker(), worker()])
+    processingRef.current = false
+    setProcessing(false)
+    if (uploadedAny) onUploaded?.()
+  }
+
+  async function handleTextSubmit(e) {
+    e.preventDefault()
+    if (!textContent.trim()) {
+      setTextError('Please enter text content to internalize.')
+      return
+    }
+    setTextSubmitting(true)
+    setTextError('')
     try {
-      await Promise.all(Array.from({ length: Math.min(2, queuedCount) }, () => worker()))
+      await uploadRawText(textTitle || 'Pasted Notes', textContent)
+      onUploaded?.()
+      onClose()
+    } catch (err) {
+      setTextError(err.message)
     } finally {
-      processingRef.current = false
-      setProcessing(false)
-      if (uploadedAny) onUploaded()
+      setTextSubmitting(false)
     }
   }
 
-  function cancelEntry(id) {
-    const upload = activeUploads.current.get(id)
-    if (upload) upload.abort()
-    updateQueue((current) => current.map((entry) => (
-      entry.id === id && entry.status !== 'uploaded'
-        ? { ...entry, status: 'cancelled', error: '', retryable: false }
-        : entry
-    )))
+  async function handleUrlSubmit(e) {
+    e.preventDefault()
+    if (!webUrl.trim()) {
+      setUrlError('Please enter a website URL.')
+      return
+    }
+    setUrlSubmitting(true)
+    setUrlError('')
+    try {
+      await uploadUrl(webUrl, urlTitle)
+      onUploaded?.()
+      onClose()
+    } catch (err) {
+      setUrlError(err.message)
+    } finally {
+      setUrlSubmitting(false)
+    }
   }
-
-  function retryEntry(id) {
-    updateQueue((current) => current.map((entry) => (
-      entry.id === id
-        ? { ...entry, status: 'queued', progress: 0, error: '', retryable: false }
-        : entry
-    )))
-    if (processingRef.current) return
-    window.setTimeout(startUploads, 0)
-  }
-
-  const progressEntries = queue.filter((entry) => !(entry.status === 'failed' && !entry.retryable))
-  const totalBytes = progressEntries.reduce((total, entry) => total + entry.file.size, 0)
-  const transferredBytes = progressEntries.reduce((total, entry) => (
-    total + entry.file.size * (entry.status === 'uploaded' ? 1 : entry.progress / 100)
-  ), 0)
-  const overallProgress = totalBytes ? Math.round((transferredBytes / totalBytes) * 100) : 0
-  const queuedCount = queue.filter((entry) => entry.status === 'queued').length
-  const uploadedCount = queue.filter((entry) => entry.status === 'uploaded').length
-  const uploadableCount = progressEntries.length
-  const hasWork = queue.some((entry) => ['queued', 'uploading'].includes(entry.status))
 
   return (
-    <div
-      className="upload-modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (!processing && event.target === event.currentTarget) onClose()
-      }}
-    >
-      <motion.section
-        className="upload-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="upload-dialog-title"
-        initial={{ opacity: 0, y: 12, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 8, scale: 0.99 }}
-        transition={{ duration: 0.2 }}
+    <div className="upload-dialog-overlay" onClick={onClose}>
+      <motion.div
+        className="upload-dialog-card"
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
       >
-        <div className="upload-modal-heading">
-          <div className="upload-modal-title">
-            <span className="upload-modal-icon"><UploadCloud size={19} /></span>
-            <div><h2 id="upload-dialog-title">Add papers</h2><p>Select one or more PDFs to add to your library.</p></div>
+        <div className="dialog-header">
+          <div>
+            <h3>Add Learning Material</h3>
+            <p>Ingest textbooks, lecture notes, or web articles to build your knowledge graph.</p>
           </div>
-          <button className="icon-button upload-modal-close" onClick={onClose} disabled={processing} aria-label="Close upload dialog"><X size={19} /></button>
+          <button className="icon-button" onClick={onClose} aria-label="Close dialog">
+            <X size={18} />
+          </button>
         </div>
 
-        <input
-          ref={inputRef}
-          className="visually-hidden"
-          type="file"
-          accept="application/pdf,.pdf"
-          multiple
-          onChange={(event) => {
-            addFiles(event.target.files)
-            event.target.value = ''
-          }}
-        />
-        <button
-          className={`upload-dropzone${dragging ? ' upload-dropzone-active' : ''}`}
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(event) => {
-            event.preventDefault()
-            setDragging(false)
-            addFiles(event.dataTransfer.files)
-          }}
-        >
-          <span className="dropzone-art"><UploadCloud size={24} /></span>
-          <strong>Drop your PDFs here, or <span>browse files</span></strong>
-          <small>Multiple files welcome · no document-count limit · up to {MAX_PDF_SIZE_MB} MB each</small>
-        </button>
+        {/* Tab switcher */}
+        <div className="upload-tabs">
+          <button
+            type="button"
+            className={`upload-tab-btn ${activeTab === 'pdf' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('pdf')}
+          >
+            <UploadCloud size={16} /> Upload PDFs
+          </button>
+          <button
+            type="button"
+            className={`upload-tab-btn ${activeTab === 'text' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('text')}
+          >
+            <PenTool size={16} /> Paste Raw Text
+          </button>
+          <button
+            type="button"
+            className={`upload-tab-btn ${activeTab === 'url' ? 'is-active' : ''}`}
+            onClick={() => setActiveTab('url')}
+          >
+            <Globe size={16} /> Web Article URL
+          </button>
+        </div>
 
-        {queue.length > 0 && (
-          <div className="upload-queue-section">
-            <div className="upload-queue-heading">
-              <div><strong>Upload queue</strong><span>{queue.length} {queue.length === 1 ? 'file' : 'files'}</span></div>
-              <button
-                type="button"
-                className="text-button"
-                disabled={processing}
-                onClick={() => updateQueue([])}
-              >
-                Clear list
-              </button>
+        {activeTab === 'pdf' && (
+          <div className="tab-content">
+            <div
+              className={`dropzone ${dragging ? 'is-dragging' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setDragging(false)
+                if (e.dataTransfer.files) addFiles(e.dataTransfer.files)
+              }}
+              onClick={() => inputRef.current?.click()}
+            >
+              <input
+                ref={inputRef}
+                type="file"
+                multiple
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+              <UploadCloud size={36} className="dropzone-icon" />
+              <strong>Drag & drop PDF files here, or click to browse</strong>
+              <span>Supports multiple files up to {MAX_PDF_SIZE_MB}MB each</span>
             </div>
-            <div className="upload-overall">
-              <div className="upload-overall-label"><span>{uploadedCount} of {uploadableCount} uploaded</span><b>{overallProgress}%</b></div>
-              <div className="upload-progress-track"><i style={{ width: `${overallProgress}%` }} /></div>
-            </div>
-            <div className="upload-queue-list">
-              {queue.map((entry) => (
-                <article className={`upload-queue-item upload-item-${entry.status}`} key={entry.id}>
-                  <span className="queue-file-icon"><FileText size={17} /></span>
-                  <div className="queue-file-info">
-                    <strong title={entry.file.name}>{entry.file.name}</strong>
-                    <span>{readableSize(entry.file.size)} · {queueStatus(entry)}</span>
-                    {entry.status === 'uploading' && <i className="queue-item-progress" style={{ width: `${entry.progress}%` }} />}
-                    {entry.error && <small className="queue-item-error"><AlertCircle size={12} />{entry.error}</small>}
+
+            {queue.length > 0 && (
+              <div className="queue-list">
+                {queue.map((item) => (
+                  <div key={item.id} className={`queue-item queue-${item.status}`}>
+                    <FileText size={16} />
+                    <div className="flex-1 min-w-0" style={{ margin: '0 8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="file-name" style={{ fontWeight: 500, fontSize: '0.85rem' }}>{item.file.name}</span>
+                        <span className="file-size" style={{ fontSize: '0.75rem', opacity: 0.7 }}>{readableSize(item.file.size)}</span>
+                      </div>
+                      {item.status === 'uploading' && (
+                        <div style={{ width: '100%', height: '4px', background: '#e2e8f0', borderRadius: '999px', marginTop: '4px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', background: 'var(--brand-600, #3b82f6)', width: `${item.progress}%`, transition: 'width 0.2s ease' }} />
+                        </div>
+                      )}
+                      {item.error && <span style={{ color: '#ef4444', fontSize: '0.75rem', display: 'block', marginTop: '2px' }}>{item.error}</span>}
+                    </div>
+                    <span className="file-status" style={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>
+                      {item.status === 'uploading' ? `${item.progress}%` : item.status}
+                    </span>
                   </div>
-                  {entry.status === 'uploaded' && <Check className="queue-item-check" size={17} />}
-                  {entry.status === 'uploading' && <button className="icon-button queue-item-action" onClick={() => cancelEntry(entry.id)} aria-label={`Cancel ${entry.file.name}`}><X size={16} /></button>}
-                  {(entry.status === 'queued' || entry.status === 'failed') && !entry.retryable && entry.status === 'queued' && (
-                    <button className="icon-button queue-item-action" onClick={() => cancelEntry(entry.id)} aria-label={`Remove ${entry.file.name} from queue`}><X size={16} /></button>
-                  )}
-                  {entry.retryable && <button className="icon-button queue-item-retry" onClick={() => retryEntry(entry.id)} aria-label={`Retry ${entry.file.name}`}><RotateCcw size={15} /></button>}
-                  {(entry.status === 'duplicate' || entry.status === 'cancelled' || (entry.status === 'failed' && !entry.retryable)) && (
-                    <span className="queue-item-dismiss" aria-hidden="true"><X size={15} /></span>
-                  )}
-                </article>
-              ))}
+                ))}
+              </div>
+            )}
+
+            <div className="dialog-actions">
+              {queue.length > 0 && queue.every((e) => e.status === 'uploaded' || e.status === 'duplicate') ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    onUploaded?.()
+                    onClose()
+                  }}
+                >
+                  <Check size={16} /> Done
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={processing || !queue.some((e) => e.status === 'queued')}
+                    onClick={startUploads}
+                  >
+                    {processing ? <><LoaderCircle className="animate-spin" size={16} /> Processing...</> : 'Upload Now'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
 
-        <div className="upload-modal-footer">
-          <span className="upload-limit-note">{queue.length ? `${queue.filter((entry) => entry.status === 'uploaded').length} uploaded in this session` : 'Your files stay private to your account.'}</span>
-          <div>
-            <button type="button" className="button button-outline" onClick={onClose} disabled={processing}>Close</button>
-            <button type="button" className="button button-primary" onClick={startUploads} disabled={!queuedCount || processing}>
-              {processing ? <><LoaderCircle className="spin" size={15} /> Uploading…</> : <>Upload {queuedCount ? `${queuedCount} ${queuedCount === 1 ? 'PDF' : 'PDFs'}` : 'PDFs'}</>}
-            </button>
-          </div>
-        </div>
-        {hasWork && <p className="upload-queue-hint">Uploads run two files at a time; the rest wait safely in the queue.</p>}
-      </motion.section>
+        {activeTab === 'text' && (
+          <form className="tab-content" onSubmit={handleTextSubmit}>
+            <div className="form-group">
+              <label>Topic / Document Title</label>
+              <input
+                type="text"
+                placeholder="e.g. Distributed Consensus Notes"
+                value={textTitle}
+                onChange={(e) => setTextTitle(e.target.value)}
+                className="form-input"
+              />
+            </div>
+            <div className="form-group">
+              <label>Raw Study Material (Text)</label>
+              <textarea
+                rows={7}
+                placeholder="Paste book chapters, lecture transcripts, definitions, or articles..."
+                value={textContent}
+                onChange={(e) => setTextContent(e.target.value)}
+                className="form-textarea"
+                required
+              />
+            </div>
+            {textError && <div className="form-error"><AlertCircle size={15} /> {textError}</div>}
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={textSubmitting}>
+                {textSubmitting ? <><LoaderCircle className="animate-spin" size={16} /> Ingesting...</> : 'Save & Internalize'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {activeTab === 'url' && (
+          <form className="tab-content" onSubmit={handleUrlSubmit}>
+            <div className="form-group">
+              <label>Website / Article URL</label>
+              <input
+                type="url"
+                placeholder="https://example.com/article-or-tutorial"
+                value={webUrl}
+                onChange={(e) => setWebUrl(e.target.value)}
+                className="form-input"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Optional Custom Title</label>
+              <input
+                type="text"
+                placeholder="e.g. React 19 Architecture Guide"
+                value={urlTitle}
+                onChange={(e) => setUrlTitle(e.target.value)}
+                className="form-input"
+              />
+            </div>
+            {urlError && <div className="form-error"><AlertCircle size={15} /> {urlError}</div>}
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={urlSubmitting}>
+                {urlSubmitting ? <><LoaderCircle className="animate-spin" size={16} /> Fetching & Parsing...</> : 'Import & Internalize'}
+              </button>
+            </div>
+          </form>
+        )}
+      </motion.div>
     </div>
   )
 }

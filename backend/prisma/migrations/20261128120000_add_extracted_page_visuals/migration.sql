@@ -1,0 +1,2 @@
+ALTER TABLE "ExtractedPage"
+ADD COLUMN "visuals" JSONB NOT NULL DEFAULT '{}';

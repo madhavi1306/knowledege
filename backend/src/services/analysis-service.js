@@ -104,8 +104,13 @@ function mergeAnalysisChunks(outputs) {
       }
       mergedConcept.definition ||= concept.definition
       mergedConcept.explanation ||= concept.explanation
-      for (const field of ['topicNames', 'prerequisites', 'relatedConcepts', 'examples', 'formulas', 'importantFacts']) {
-        mergedConcept[field] = uniqueStrings([...mergedConcept[field], ...concept[field]])
+      mergedConcept.simpleExplanation ||= concept.simpleExplanation
+      mergedConcept.analogy ||= concept.analogy
+      mergedConcept.realLifeExample ||= concept.realLifeExample
+      mergedConcept.difficulty ||= concept.difficulty
+      mergedConcept.importance ||= concept.importance
+      for (const field of ['topicNames', 'prerequisites', 'relatedConcepts', 'examples', 'formulas', 'importantFacts', 'stepByStepExplanation', 'misconceptions', 'learningObjectives']) {
+        mergedConcept[field] = uniqueStrings([...(mergedConcept[field] || []), ...(concept[field] || [])])
       }
       const references = new Map(
         mergedConcept.sourceReferences.map((reference) => [
@@ -330,6 +335,7 @@ export function createAnalysisService(prisma, overrides = {}) {
         examples: page.examples,
         formulas: page.formulas,
         tables: page.tables,
+        visuals: page.visuals || {},
         importantTerms: page.importantTerms,
         sections: page.sections,
       })),
@@ -738,6 +744,13 @@ export function createAnalysisService(prisma, overrides = {}) {
       sourcePageNumbers: relationship.sourcePageNumbers,
     }))
 
+    const extractedPages = typeof prisma.extractedPage?.findMany === 'function'
+      ? await prisma.extractedPage.findMany({
+          where: { documentAnalysisId: analysis.id },
+          orderBy: { pageNumber: 'asc' },
+        })
+      : []
+
     return {
       document: documentSummary,
       analysis: {
@@ -752,6 +765,7 @@ export function createAnalysisService(prisma, overrides = {}) {
         topics,
         concepts: [...conceptsById.values()],
         relationships,
+        pages: extractedPages,
       },
     }
   }
@@ -774,7 +788,7 @@ export function createAnalysisService(prisma, overrides = {}) {
       name: topic.name,
       description: topic.description,
       parentId: topic.parentId,
-      document: topic.documentAnalysis.document,
+      document: topic.documentAnalysis?.document || null,
     }))
   }
 

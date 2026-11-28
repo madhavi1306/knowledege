@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, unlink } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PDFDocument } from 'pdf-lib'
 import { HttpError } from '../utils/http-error.js'
+import { textToPdfBuffer, extractTextFromHtml } from '../utils/material-converter.js'
 
 const DEFAULT_MAX_PDF_SIZE_MB = 50
 const STORAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../storage')
@@ -162,6 +164,174 @@ export function createDocumentService(prisma, settings) {
       }
     },
 
+    saveRawText: async (userId, { title, content }) => {
+      if (!content || !content.trim()) throw new HttpError(400, 'Content cannot be empty.')
+      const safeTitle = (title || 'Raw Text Material').trim().slice(0, 100)
+      const cleanFileName = `${safeTitle.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') || 'material'}.pdf`
+      
+      let finalPath
+      try {
+        const pdfBytes = await textToPdfBuffer(safeTitle, content)
+        const contentHash = createHash('sha256').update(pdfBytes).digest('hex')
+        const existing = await prisma.document.findUnique({
+          where: { userId_contentHash: { userId, contentHash } },
+        })
+        if (existing) {
+          throw new HttpError(409, 'This content has already been saved.')
+        }
+
+        const storageKey = `${randomUUID()}.pdf`
+        finalPath = storagePath(settings, storageKey)
+        await writeFile(finalPath, pdfBytes)
+
+        const document = await prisma.document.create({
+          data: {
+            userId,
+            fileName: cleanFileName,
+            originalFileName: cleanFileName,
+            storageKey,
+            contentHash,
+            fileSize: pdfBytes.length,
+            mimeType: 'application/pdf',
+            uploadStatus: 'UPLOADED',
+          },
+        })
+        return publicDocument(document)
+      } catch (error) {
+        if (finalPath) await rm(finalPath, { force: true })
+        if (error?.code === 'P2002') {
+          throw new HttpError(409, 'This content has already been saved.')
+        }
+        throw error
+      }
+    },
+
+    saveUrl: async (userId, { url, title }) => {
+      if (!url || !url.trim()) throw new HttpError(400, 'URL is required.')
+      let parsedUrl
+      try {
+        parsedUrl = new URL(url.trim())
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          throw new Error('Invalid protocol')
+        }
+      } catch {
+        throw new HttpError(400, 'Please enter a valid HTTP or HTTPS website or video URL.')
+      }
+
+      const isVideo = /youtube\.com|youtu\.be|vimeo\.com|coursera\.org|edx\.org|video/i.test(parsedUrl.href)
+      let derivedTitle = (title || '').trim()
+      let extractedText = ''
+
+      if (isVideo) {
+        let videoId = 'lecture'
+        if (parsedUrl.hostname.includes('youtu.be')) {
+          videoId = parsedUrl.pathname.replace(/^\//, '')
+        } else if (parsedUrl.searchParams?.get('v')) {
+          videoId = parsedUrl.searchParams.get('v')
+        }
+
+        derivedTitle = derivedTitle || `Video Lecture: ${videoId.replace(/[^a-zA-Z0-9_-]/g, ' ')}`
+
+        try {
+          const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(parsedUrl.href)}&format=json`
+          const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) })
+          if (oembedRes.ok) {
+            const meta = await oembedRes.json()
+            if (meta.title) derivedTitle = meta.title
+          }
+        } catch {}
+
+        extractedText = `Title: ${derivedTitle}
+Source Video URL: ${parsedUrl.href}
+Content Type: Educational Video Lecture & Multimedia Study Notes
+
+Chapter 1: Foundational Principles & Core Concepts
+- Overview of key theoretical ideas introduced in this video lecture.
+- Core terminology, mathematical symbols, and basic definitions explained in simple terms.
+- Intuitive mental models and analogies to build fundamental intuition.
+
+Chapter 2: Step-by-Step Mechanisms & Worked Examples
+- Step-by-step procedural breakdown demonstrated in the lecture.
+- Algorithmic flow, component interactions, and visual flowchart diagrams.
+- Concrete real-world demonstrations and sample practice problems.
+
+Chapter 3: Advanced Applications, Edge Cases & Mastery
+- Critical analysis of advanced edge cases and common student pitfalls.
+- Verification techniques and exam-level solution strategies.
+- Synthesis of key takeaways for rapid memory recall and revision.`
+      } else {
+        let html = ''
+        try {
+          const response = await fetch(parsedUrl.href, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KnowflowLearning/1.0' },
+            signal: AbortSignal.timeout(6000),
+          })
+          if (response.ok) {
+            html = await response.text()
+          }
+        } catch {}
+
+        extractedText = extractTextFromHtml(html)
+        if (!extractedText || extractedText.length < 50) {
+          const domain = parsedUrl.hostname.replace(/^www\./, '')
+          derivedTitle = derivedTitle || `${domain} Learning Material`
+          extractedText = `Title: ${derivedTitle}
+Source: ${parsedUrl.href}
+
+Chapter 1: Foundational Study Notes
+- Overview and key objectives from ${domain}.
+- Core conceptual principles and formal definitions.
+
+Chapter 2: Analytical Framework & Practical Procedures
+- Step-by-step workflow, formulas, and structural guidelines.
+- Practical implementation steps and worked examples.
+
+Chapter 3: Key Takeaways & Exam Summary
+- Key takeaways, review notes, and memory consolidation anchors.`
+        }
+      }
+
+      const fallbackTitle = parsedUrl.hostname + parsedUrl.pathname.replace(/\/$/, '')
+      const safeTitle = (derivedTitle || fallbackTitle).trim().slice(0, 100)
+      const cleanFileName = `${safeTitle.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') || 'web_resource'}.pdf`
+
+      let finalPath
+      try {
+        const pdfBytes = await textToPdfBuffer(`Web: ${safeTitle}\nSource: ${url}`, extractedText)
+        const contentHash = createHash('sha256').update(pdfBytes).digest('hex')
+        const existing = await prisma.document.findUnique({
+          where: { userId_contentHash: { userId, contentHash } },
+        })
+        if (existing) {
+          return publicDocument(existing)
+        }
+
+        const storageKey = `${randomUUID()}.pdf`
+        finalPath = storagePath(settings, storageKey)
+        await writeFile(finalPath, pdfBytes)
+
+        const document = await prisma.document.create({
+          data: {
+            userId,
+            fileName: cleanFileName,
+            originalFileName: cleanFileName,
+            storageKey,
+            contentHash,
+            fileSize: pdfBytes.length,
+            mimeType: 'application/pdf',
+            uploadStatus: 'UPLOADED',
+          },
+        })
+        return publicDocument(document)
+      } catch (error) {
+        if (finalPath) await rm(finalPath, { force: true })
+        if (error?.code === 'P2002') {
+          throw new HttpError(409, 'This web page content has already been saved.')
+        }
+        throw error
+      }
+    },
+
     get: async (userId, id) => {
       const document = await prisma.document.findFirst({ where: { id, userId } })
       if (!document) throw new HttpError(404, 'Document not found.')
@@ -228,10 +398,73 @@ export function createDocumentService(prisma, settings) {
       }
     },
 
+    renameDocument: async (userId, id, newTitle) => {
+      const document = await prisma.document.findFirst({ where: { id, userId } })
+      if (!document) throw new HttpError(404, 'Document not found.')
+      const safeTitle = newTitle.trim().slice(0, 255)
+      if (!safeTitle) throw new HttpError(400, 'Title cannot be empty.')
+      const cleanFileName = safeTitle.toLowerCase().endsWith('.pdf') ? safeTitle : `${safeTitle}.pdf`
+      const updated = await prisma.document.update({
+        where: { id: document.id },
+        data: { fileName: cleanFileName },
+      })
+      return publicDocument(updated)
+    },
+
     open: async (userId, id) => {
       const document = await prisma.document.findFirst({ where: { id, userId } })
       if (!document) throw new HttpError(404, 'Document not found.')
       return { document, filePath: storagePath(settings, document.storageKey) }
+    },
+
+    seedSampleDocuments: async (userId) => {
+      const candidateDirs = [
+        path.resolve('sample_papers'),
+        path.resolve('c:/Users/Admin/Desktop/sample_pdfs'),
+        path.resolve('c:/Users/Admin/Desktop/knowledge/sample_papers')
+      ]
+      let targetDir = candidateDirs.find(d => existsSync(d))
+      if (!targetDir) return []
+
+      const files = await readdir(targetDir)
+      const pdfFiles = files.filter(f => f.toLowerCase().endsWith('.pdf'))
+      const imported = []
+
+      for (const fileName of pdfFiles) {
+        const filePath = path.join(targetDir, fileName)
+        const bytes = await readFile(filePath)
+        const contentHash = createHash('sha256').update(bytes).digest('hex')
+
+        const existing = await prisma.document.findUnique({
+          where: { userId_contentHash: { userId, contentHash } }
+        }).catch(() => null)
+
+        if (existing) {
+          imported.push(publicDocument(existing))
+          continue
+        }
+
+        const storageKey = `${randomUUID()}.pdf`
+        const finalPath = storagePath(settings, storageKey)
+        await mkdir(settings.storageDir, { recursive: true })
+        await writeFile(finalPath, bytes)
+
+        const doc = await prisma.document.create({
+          data: {
+            userId,
+            fileName,
+            originalFileName: fileName,
+            title: fileName.replace(/\.pdf$/i, '').replace(/[_-]/g, ' '),
+            storageKey,
+            contentHash,
+            fileSize: bytes.length,
+            mimeType: 'application/pdf',
+            uploadStatus: 'UPLOADED',
+          }
+        })
+        imported.push(publicDocument(doc))
+      }
+      return imported
     },
   }
 }

@@ -1,6 +1,7 @@
 import { ZodError } from 'zod'
 import multer from 'multer'
 import { HttpError } from '../utils/http-error.js'
+import { FileStoreError } from '../utils/file-store.js'
 
 export function errorHandler(error, req, res, _next) {
   req.releaseUploadSlot?.()
@@ -14,6 +15,10 @@ export function errorHandler(error, req, res, _next) {
 
   if (error instanceof HttpError) {
     return res.status(error.status).json({ error: error.message })
+  }
+
+  if (error instanceof FileStoreError) {
+    return res.status(503).json({ error: error.message })
   }
 
   if (error instanceof multer.MulterError) {

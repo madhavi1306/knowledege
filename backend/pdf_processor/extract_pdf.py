@@ -8,7 +8,6 @@ from statistics import median
 
 import pymupdf as fitz
 
-
 DEFINITION_PATTERN = re.compile(
     r"\b(?:is defined as|is a|is an|means|refers to|can be defined as)\b",
     re.IGNORECASE,
@@ -19,6 +18,7 @@ EXAMPLE_PATTERN = re.compile(
 )
 FORMULA_PATTERN = re.compile(r"(?:[=<>±×÷∑∫√^]|\b[A-Za-z]\s*=\s*\S)")
 TERM_PATTERN = re.compile(r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{2,})\b")
+LIST_PATTERN = re.compile(r"^(?:[-*•]|\d+[.)])\s+(.+)")
 
 
 def _paragraphs(page, original_text):
@@ -77,6 +77,49 @@ def _tables(page):
         return []
 
 
+def _visuals(page):
+    """
+    Detect visual content: raster images, drawings/diagrams, and vector flowcharts.
+    """
+    images_list = []
+    for img in page.get_images(full=True):
+        xref = img[0]
+        images_list.append({
+            "xref": xref,
+            "width": img[2],
+            "height": img[3],
+            "colorspace": img[5],
+        })
+
+    drawings = page.get_drawings()
+    has_diagram = len(drawings) > 10
+
+    return {
+        "imageCount": len(images_list),
+        "images": images_list[:10],
+        "hasDiagramOrChart": has_diagram,
+        "drawingElementCount": len(drawings),
+    }
+
+
+def _lists(paragraphs):
+    detected_lists = []
+    current_list = []
+    for p in paragraphs:
+        lines = p.splitlines()
+        for line in lines:
+            match = LIST_PATTERN.match(line.strip())
+            if match:
+                current_list.append(match.group(1).strip())
+            else:
+                if current_list:
+                    detected_lists.append(current_list)
+                    current_list = []
+    if current_list:
+        detected_lists.append(current_list)
+    return detected_lists
+
+
 def _terms(text, headings):
     candidates = TERM_PATTERN.findall(" ".join(headings) + "\n" + text)
     excluded = {"The", "This", "That", "These", "Those", "Chapter", "Section"}
@@ -87,15 +130,21 @@ def _terms(text, headings):
 def extract_document(pdf_path):
     pages = []
     current_section = "Introduction"
+    all_sections = []
+
     with fitz.open(pdf_path) as document:
         if document.needs_pass:
             raise ValueError("The PDF requires a password.")
+        
+        toc = document.get_toc() # Table of contents if present
+
         for page_index, page in enumerate(document):
             original_text = page.get_text("text", sort=True)
             paragraphs = _paragraphs(page, original_text)
             headings, subheadings = _headings(page)
             if headings:
                 current_section = headings[-1]
+                all_sections.append({"heading": current_section, "page": page_index + 1})
 
             definitions = [
                 paragraph for paragraph in paragraphs
@@ -109,6 +158,8 @@ def extract_document(pdf_path):
                 line.strip() for line in original_text.splitlines()
                 if line.strip() and FORMULA_PATTERN.search(line)
             ]
+            visuals = _visuals(page)
+            lists = _lists(paragraphs)
             context_parts = [current_section, *paragraphs[:2]]
 
             pages.append({
@@ -123,6 +174,8 @@ def extract_document(pdf_path):
                 "examples": examples,
                 "formulas": formulas,
                 "tables": _tables(page),
+                "visuals": visuals,
+                "lists": lists,
                 "importantTerms": _terms(original_text, headings),
                 "sections": [{
                     "heading": current_section,
@@ -131,9 +184,16 @@ def extract_document(pdf_path):
                 }],
             })
 
+    total_images = sum(page["visuals"]["imageCount"] for page in pages)
+    total_tables = sum(len(page["tables"]) for page in pages)
+
     return {
         "pageCount": len(pages),
         "totalCharacters": sum(len(page["originalText"]) for page in pages),
+        "totalImages": total_images,
+        "totalTables": total_tables,
+        "toc": toc,
+        "sections": all_sections,
         "pages": pages,
     }
 

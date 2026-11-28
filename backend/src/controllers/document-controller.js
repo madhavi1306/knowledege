@@ -28,6 +28,35 @@ export function createDocumentController(service) {
       }
     },
 
+    saveText: async (req, res, next) => {
+      try {
+        const { title, content } = req.body || {}
+        const document = await service.saveRawText(req.userId, { title, content })
+        return res.status(201).json({ document })
+      } catch (error) {
+        return next(error)
+      }
+    },
+
+    saveUrl: async (req, res, next) => {
+      try {
+        const { url, title } = req.body || {}
+        const document = await service.saveUrl(req.userId, { url, title })
+        return res.status(201).json({ document })
+      } catch (error) {
+        return next(error)
+      }
+    },
+
+    seedSamples: async (req, res, next) => {
+      try {
+        const documents = await service.seedSampleDocuments(req.userId)
+        return res.status(200).json({ documents, count: documents.length })
+      } catch (error) {
+        return next(error)
+      }
+    },
+
     list: async (req, res, next) => {
       try {
         const query = listQuerySchema.parse(req.query)
@@ -67,11 +96,9 @@ export function createDocumentController(service) {
         res.set({
           'Cache-Control': 'private, no-store',
           'Content-Disposition': `inline; filename="document.pdf"; filename*=UTF-8''${encodedFileName(document.fileName)}`,
-          'Content-Security-Policy': "sandbox; default-src 'none'; script-src 'none'; object-src 'none'",
           'Content-Type': 'application/pdf',
           'Cross-Origin-Resource-Policy': 'same-origin',
           'X-Content-Type-Options': 'nosniff',
-          'X-Frame-Options': 'DENY',
         })
 
         const stream = createReadStream(filePath)
@@ -82,6 +109,16 @@ export function createDocumentController(service) {
           return next(error)
         })
         stream.pipe(res)
+      } catch (error) {
+        return next(error)
+      }
+    },
+
+    rename: async (req, res, next) => {
+      try {
+        const { title } = req.body || {}
+        const document = await service.renameDocument(req.userId, req.params.id, title || '')
+        return res.json({ document })
       } catch (error) {
         return next(error)
       }

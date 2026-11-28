@@ -110,14 +110,17 @@ test('uses the configured backend AI provider and validates its JSON output', as
   })
 })
 
-test('reports missing provider configuration instead of returning mock analysis', async () => {
+test('reports missing provider configuration instead of returning generated fallback analysis', async () => {
   const previousKey = process.env.OPENAI_API_KEY
   const previousModel = process.env.OPENAI_MODEL
   delete process.env.OPENAI_API_KEY
   delete process.env.OPENAI_MODEL
   try {
     await assert.rejects(
-      createAnalysisAi().analyzeChunk({ pages: [] }),
+      createAnalysisAi().analyzeChunk({ pages: [{
+        pageNumber: 1,
+        originalText: sourceText,
+      }] }),
       AnalysisConfigurationError,
     )
   } finally {
